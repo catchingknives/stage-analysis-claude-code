@@ -16,9 +16,11 @@ python3 scripts/fetch_stage_data.py {TICKER(S)} --spx
 
 Always include `--spx` for full analysis (relative strength + market context).
 
-### 3. Summary Table (ALWAYS output first)
+### 3. Emoji Summary Table (MANDATORY — output BEFORE proceeding)
 
-Output the emoji summary table **before** any detailed sections. Use the exact same table format defined in `QuickAnalysis.md` Step 2. This gives a scannable overview before the deep dive.
+**GATE: Do NOT proceed to Step 4 until the emoji summary table is output.** This is the first thing the user sees and provides a scannable overview before the deep dive. Skipping this step is a CRITICAL FAILURE.
+
+Output the emoji summary table **before** any detailed sections. Use the exact same table format defined in `QuickAnalysis.md` Step 2 — including all emoji columns (MAs, Slope, Vol, RS, PPO, 52wH, Candle, Signal).
 
 ### 4. Full Analysis Output
 
