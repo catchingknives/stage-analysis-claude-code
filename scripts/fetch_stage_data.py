@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """
 Fetch weekly OHLCV data and compute Stan Weinstein Stage Analysis indicators.
-Outputs JSON to stdout for consumption by the StageAnalysis skill.
+Outputs JSON to stdout for consumption by PAI StageAnalysis skill.
 
 Usage:
     python3 fetch_stage_data.py AAPL
     python3 fetch_stage_data.py VWCE.DE --spx
     python3 fetch_stage_data.py AAPL MSFT --spx
+
+    # Sector scan (3-tier depth):
+    python3 fetch_stage_data.py --sector-scan 1                     # Market breadth (11 S&P sector ETFs)
+    python3 fetch_stage_data.py --sector-scan 2 XLE GDX SOIL        # Sector ETF 20dema check
+    python3 fetch_stage_data.py --sector-scan 3 NTR MOS CF SQM ICL  # Constituent scan
+    python3 fetch_stage_data.py NTR --spx --sector-scan 1           # Combined with regular analysis
 """
 
 import argparse
@@ -297,6 +303,150 @@ def fetch_and_compute(ticker_symbol, include_spx=False, no_cache=False):
     return result
 
 
+# --- Sector Scan ---
+
+SP500_SECTORS = {
+    "XLB": "Materials",
+    "XLC": "Communication Services",
+    "XLE": "Energy",
+    "XLF": "Financials",
+    "XLI": "Industrials",
+    "XLK": "Technology",
+    "XLP": "Consumer Staples",
+    "XLRE": "Real Estate",
+    "XLU": "Utilities",
+    "XLV": "Health Care",
+    "XLY": "Consumer Discretionary",
+}
+
+
+def compute_20dema_scan(tickers, labels=None):
+    """
+    Batch fetch daily data for tickers and compute 20dema status for each.
+    Returns dict with per-ticker results and aggregate counts.
+
+    Args:
+        tickers: list of ticker symbols
+        labels: optional dict of ticker -> display name
+    """
+    if not tickers:
+        return {"error": "No tickers provided"}
+
+    end = datetime.now()
+    start = end - timedelta(days=90)  # 3 months for stable 20dema
+
+    # Batch download
+    data = yf.download(tickers, start=start, end=end, interval="1d",
+                       group_by="ticker", progress=False)
+    if data.empty:
+        return {"error": "No data returned from yfinance"}
+
+    results = []
+    single_ticker = len(tickers) == 1
+
+    for t in tickers:
+        try:
+            if single_ticker:
+                closes = data["Close"].dropna()
+            else:
+                closes = data[t]["Close"].dropna()
+
+            if len(closes) < 25:
+                results.append({
+                    "ticker": t,
+                    "name": labels.get(t, t) if labels else t,
+                    "error": f"Insufficient data ({len(closes)} days)",
+                })
+                continue
+
+            ema_20d = ema(closes, 20)
+            price = float(closes.iloc[-1])
+            ema_val = float(ema_20d.iloc[-1])
+            above = price > ema_val
+
+            # 20dema slope: % change over last 5 trading days
+            if len(ema_20d) >= 6:
+                ema_5ago = float(ema_20d.iloc[-6])
+                slope = ((ema_val - ema_5ago) / ema_5ago) * 100 if ema_5ago != 0 else 0
+            else:
+                slope = 0
+
+            slope_dir = "rising" if slope > 0.15 else ("falling" if slope < -0.15 else "flat")
+            above_rising = above and slope_dir == "rising"
+
+            results.append({
+                "ticker": t,
+                "name": labels.get(t, t) if labels else t,
+                "price": round(price, 2),
+                "ema_20d": round(ema_val, 2),
+                "above_20dema": above,
+                "ema_20d_slope_pct": round(slope, 3),
+                "ema_20d_slope_dir": slope_dir,
+                "above_rising_20dema": above_rising,
+            })
+        except (KeyError, IndexError):
+            results.append({
+                "ticker": t,
+                "name": labels.get(t, t) if labels else t,
+                "error": "Data extraction failed",
+            })
+
+    # Aggregate
+    valid = [r for r in results if "error" not in r]
+    above_count = sum(1 for r in valid if r["above_20dema"])
+    above_rising_count = sum(1 for r in valid if r["above_rising_20dema"])
+    total = len(valid)
+    pct_above = round(above_count / total * 100, 1) if total > 0 else 0
+    pct_above_rising = round(above_rising_count / total * 100, 1) if total > 0 else 0
+
+    # Breadth label
+    if pct_above_rising >= 70:
+        breadth_label = "strong"
+    elif pct_above_rising >= 40:
+        breadth_label = "moderate"
+    elif pct_above_rising >= 20:
+        breadth_label = "weak"
+    else:
+        breadth_label = "oversold"
+
+    return {
+        "total_tickers": total,
+        "above_20dema": above_count,
+        "above_rising_20dema": above_rising_count,
+        "pct_above_20dema": pct_above,
+        "pct_above_rising_20dema": pct_above_rising,
+        "breadth": breadth_label,
+        "tickers": results,
+    }
+
+
+def sector_scan_depth1():
+    """Depth 1: Market breadth via 11 S&P 500 sector ETFs."""
+    return {
+        "depth": 1,
+        "description": "S&P 500 sector breadth — 11 sector SPDRs above/below rising 20dema",
+        "scan": compute_20dema_scan(list(SP500_SECTORS.keys()), labels=SP500_SECTORS),
+    }
+
+
+def sector_scan_depth2(etf_tickers):
+    """Depth 2: Check specific sector ETF(s) against 20dema."""
+    return {
+        "depth": 2,
+        "description": "Sector ETF 20dema trend check",
+        "scan": compute_20dema_scan(etf_tickers),
+    }
+
+
+def sector_scan_depth3(constituent_tickers):
+    """Depth 3: Full constituent scan — batch fetch and count above 20dema."""
+    return {
+        "depth": 3,
+        "description": "Constituent-level 20dema scan",
+        "scan": compute_20dema_scan(constituent_tickers),
+    }
+
+
 def classify_stage(price, ema_30w, ema_10w, slope_30w, slope_10w,
                    vol_ratio, above_30w, above_10w, pct_from_high, rs_data):
     """
@@ -377,25 +527,56 @@ def main():
     parser.add_argument("--spx", action="store_true", help="Include S&P 500 relative strength and market context")
     parser.add_argument("--no-cache", action="store_true", help="Force fresh download, ignore cache")
     parser.add_argument("--cache-info", action="store_true", help="Print cache stats and exit")
+    parser.add_argument("--sector-scan", type=int, choices=[1, 2, 3], metavar="DEPTH",
+                        help="Sector breadth scan. Depth 1: market breadth (11 S&P sector ETFs). "
+                             "Depth 2: sector ETF 20dema check (tickers = ETFs). "
+                             "Depth 3: constituent scan (tickers = individual stocks).")
     args = parser.parse_args()
 
     if args.cache_info:
         print_cache_info()
         return
 
-    if not args.tickers:
-        parser.error("tickers are required (unless using --cache-info)")
-
-    no_cache = args.no_cache
     results = {}
+    no_cache = args.no_cache
 
-    # Fetch market context if requested
-    if args.spx:
-        results["market_context"] = fetch_spx_context(no_cache=no_cache)
+    # Handle sector scan
+    if args.sector_scan:
+        # For depth 2 and 3, tickers are used as scan targets
+        # Depth 1 passes positional args through for normal stage analysis
+        stage_tickers = []
 
-    # Fetch each ticker
-    for t in args.tickers:
-        results[t] = fetch_and_compute(t, include_spx=args.spx, no_cache=no_cache)
+        if args.sector_scan == 1:
+            # Depth 1 uses hardcoded sector ETFs, all positional args are for stage analysis
+            results["sector_scan"] = sector_scan_depth1()
+            stage_tickers = args.tickers
+        elif args.sector_scan == 2:
+            if not args.tickers:
+                parser.error("--sector-scan 2 requires ETF ticker(s) as arguments")
+            results["sector_scan"] = sector_scan_depth2(args.tickers)
+            # Depth 2: all tickers go to sector scan (no separate stage analysis unless --spx tickers given)
+        elif args.sector_scan == 3:
+            if not args.tickers:
+                parser.error("--sector-scan 3 requires constituent ticker(s) as arguments")
+            results["sector_scan"] = sector_scan_depth3(args.tickers)
+            # Depth 3: all tickers go to constituent scan
+
+        # Run stage analysis on any remaining tickers (depth 1 only)
+        if stage_tickers:
+            if args.spx:
+                results["market_context"] = fetch_spx_context(no_cache=no_cache)
+            for t in stage_tickers:
+                results[t] = fetch_and_compute(t, include_spx=args.spx, no_cache=no_cache)
+    else:
+        # Standard mode — no sector scan
+        if not args.tickers:
+            parser.error("tickers are required (unless using --cache-info or --sector-scan)")
+
+        if args.spx:
+            results["market_context"] = fetch_spx_context(no_cache=no_cache)
+
+        for t in args.tickers:
+            results[t] = fetch_and_compute(t, include_spx=args.spx, no_cache=no_cache)
 
     json.dump(results, sys.stdout, indent=2, default=str)
     print()  # trailing newline

@@ -7,7 +7,7 @@ Quick Stage Analysis: summary table + key levels + one-line signal.
 ### 1. Fetch Data
 
 ```bash
-python3 scripts/fetch_stage_data.py {TICKER(S)} {--spx if requested}
+python3 ~/Documents/Investing/scripts/fetch_stage_data.py {TICKER(S)} {--spx if requested}
 ```
 
 Parse the JSON output.
@@ -61,7 +61,34 @@ For each ticker, output below the summary table:
 **Signal:** {one-line actionable signal}
 ```
 
-### 5. Signal Generation
+### 5. Sector Scan Output (if `--sector-scan` data present)
+
+When the JSON contains a `"sector_scan"` key, output this section BEFORE the per-ticker analysis:
+
+```
+━━━ SECTOR SCAN (Depth {N}) ━━━
+
+📊 **{description}**
+**Breadth:** {breadth_label} — {above_rising_count}/{total} above rising 20dema ({pct}%)
+
+| Ticker | Name | Price | 20dEMA | Above? | Slope | Power? |
+|--------|------|-------|--------|--------|-------|--------|
+| XLE    | Energy | $59.25 | $58.96 | ✅ | ↗️ +1.85% | ✅ |
+| XLK    | Tech   | $210.3 | $215.1 | ❌ | ↘️ -1.30% | ❌ |
+```
+
+**Column definitions:**
+- **Above?**: ✅ price > 20dEMA, ❌ below
+- **Slope**: ↗️ rising, ➡️ flat, ↘️ falling (with % value)
+- **Power?**: ✅ above AND rising 20dEMA (power trend), ❌ otherwise
+
+**Breadth label mapping:**
+- **strong** (≥70% above rising): "Broad-based power trend — most sectors in gear"
+- **moderate** (40-69%): "Mixed — selective participation"  
+- **weak** (20-39%): "Narrow — few sectors driving, caution on new longs"
+- **oversold** (<20%): "Deeply oversold — watch for reversal signals"
+
+### 6. Signal Generation
 
 Based on stage and indicators, generate ONE of:
 
