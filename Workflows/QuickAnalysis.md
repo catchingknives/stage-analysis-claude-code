@@ -7,7 +7,7 @@ Quick Stage Analysis: summary table + key levels + one-line signal.
 ### 1. Fetch Data
 
 ```bash
-python3 ~/Documents/Investing/scripts/fetch_stage_data.py {TICKER(S)} {--spx if requested}
+python3 scripts/fetch_stage_data.py {TICKER(S)} {--spx if requested}
 ```
 
 Parse the JSON output.

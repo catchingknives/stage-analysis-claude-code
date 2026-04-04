@@ -12,6 +12,7 @@ Usage:
     python3 fetch_stage_data.py --sector-scan 1                     # Market breadth (11 S&P sector ETFs)
     python3 fetch_stage_data.py --sector-scan 2 XLE GDX SOIL        # Sector ETF 20dema check
     python3 fetch_stage_data.py --sector-scan 3 NTR MOS CF SQM ICL  # Constituent scan
+    python3 fetch_stage_data.py --etf MOO                           # Auto-resolve ETF holdings → depth 3
     python3 fetch_stage_data.py NTR --spx --sector-scan 1           # Combined with regular analysis
 """
 
@@ -447,6 +448,23 @@ def sector_scan_depth3(constituent_tickers):
     }
 
 
+def resolve_etf_holdings(etf_symbol, max_holdings=15):
+    """
+    Resolve an ETF's top holdings via yfinance funds_data.
+    Returns (tickers_list, labels_dict) or raises on failure.
+    """
+    ticker = yf.Ticker(etf_symbol)
+    fd = ticker.funds_data
+    holdings = fd.top_holdings
+
+    if holdings is None or holdings.empty:
+        raise ValueError(f"No holdings data for {etf_symbol}")
+
+    tickers = list(holdings.index[:max_holdings])
+    labels = {sym: holdings.loc[sym, "Name"] for sym in tickers}
+    return tickers, labels
+
+
 def classify_stage(price, ema_30w, ema_10w, slope_30w, slope_10w,
                    vol_ratio, above_30w, above_10w, pct_from_high, rs_data):
     """
@@ -531,6 +549,9 @@ def main():
                         help="Sector breadth scan. Depth 1: market breadth (11 S&P sector ETFs). "
                              "Depth 2: sector ETF 20dema check (tickers = ETFs). "
                              "Depth 3: constituent scan (tickers = individual stocks).")
+    parser.add_argument("--etf", type=str, metavar="SYMBOL",
+                        help="Auto-resolve ETF holdings for depth 3 scan. "
+                             "Fetches top holdings from yfinance and runs constituent scan.")
     args = parser.parse_args()
 
     if args.cache_info:
@@ -540,8 +561,33 @@ def main():
     results = {}
     no_cache = args.no_cache
 
-    # Handle sector scan
-    if args.sector_scan:
+    # Handle --etf flag (implies --sector-scan 3)
+    if args.etf:
+        if args.sector_scan and args.sector_scan != 3:
+            parser.error("--etf implies --sector-scan 3; don't combine with other depths")
+        args.sector_scan = 3
+        try:
+            etf_tickers, etf_labels = resolve_etf_holdings(args.etf)
+            print(f"Resolved {args.etf} -> {len(etf_tickers)} holdings: {', '.join(etf_tickers)}", file=sys.stderr)
+        except Exception as e:
+            print(json.dumps({"error": f"Failed to resolve {args.etf} holdings: {e}"}))
+            return
+        scan_result = compute_20dema_scan(etf_tickers, labels=etf_labels)
+        results["sector_scan"] = {
+            "depth": 3,
+            "etf": args.etf,
+            "description": f"{args.etf} top {len(etf_tickers)} holdings — constituent 20dema scan",
+            "scan": scan_result,
+        }
+        # Any positional tickers get normal stage analysis
+        if args.tickers:
+            if args.spx:
+                results["market_context"] = fetch_spx_context(no_cache=no_cache)
+            for t in args.tickers:
+                results[t] = fetch_and_compute(t, include_spx=args.spx, no_cache=no_cache)
+
+    # Handle sector scan (without --etf)
+    elif args.sector_scan:
         # For depth 2 and 3, tickers are used as scan targets
         # Depth 1 passes positional args through for normal stage analysis
         stage_tickers = []
@@ -554,12 +600,10 @@ def main():
             if not args.tickers:
                 parser.error("--sector-scan 2 requires ETF ticker(s) as arguments")
             results["sector_scan"] = sector_scan_depth2(args.tickers)
-            # Depth 2: all tickers go to sector scan (no separate stage analysis unless --spx tickers given)
         elif args.sector_scan == 3:
             if not args.tickers:
                 parser.error("--sector-scan 3 requires constituent ticker(s) as arguments")
             results["sector_scan"] = sector_scan_depth3(args.tickers)
-            # Depth 3: all tickers go to constituent scan
 
         # Run stage analysis on any remaining tickers (depth 1 only)
         if stage_tickers:

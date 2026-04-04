@@ -52,23 +52,23 @@ If this directory exists, load and apply any PREFERENCES.md, configurations, or 
 
 ## Data Script
 
-**Path:** `~/Documents/Investing/scripts/fetch_stage_data.py`
+**Path:** `scripts/fetch_stage_data.py`
 
 ```bash
 # Quick — single ticker
-python3 ~/Documents/Investing/scripts/fetch_stage_data.py AAPL
+python3 scripts/fetch_stage_data.py AAPL
 
 # With S&P 500 relative strength + market context
-python3 ~/Documents/Investing/scripts/fetch_stage_data.py AAPL --spx
+python3 scripts/fetch_stage_data.py AAPL --spx
 
 # Multiple tickers
-python3 ~/Documents/Investing/scripts/fetch_stage_data.py AAPL MSFT VWCE.DE --spx
+python3 scripts/fetch_stage_data.py AAPL MSFT VWCE.DE --spx
 
 # Force fresh download (ignore cache)
-python3 ~/Documents/Investing/scripts/fetch_stage_data.py AAPL --no-cache
+python3 scripts/fetch_stage_data.py AAPL --no-cache
 
 # Print cache statistics
-python3 ~/Documents/Investing/scripts/fetch_stage_data.py --cache-info
+python3 scripts/fetch_stage_data.py --cache-info
 ```
 
 Output: JSON with all computed indicators (MAs, slopes, volume ratios, RS, PPO, stage classification).
@@ -77,16 +77,20 @@ Output: JSON with all computed indicators (MAs, slopes, volume ratios, RS, PPO, 
 
 ```bash
 # Depth 1 — Market breadth: 11 S&P 500 sector SPDRs above/below rising 20dema
-python3 ~/Documents/Investing/scripts/fetch_stage_data.py --sector-scan 1
+python3 scripts/fetch_stage_data.py --sector-scan 1
 
 # Depth 2 — Sector ETF trend: specific ETFs above/below rising 20dema
-python3 ~/Documents/Investing/scripts/fetch_stage_data.py --sector-scan 2 XLE GDX SOIL
+python3 scripts/fetch_stage_data.py --sector-scan 2 XLE GDX SOIL
 
 # Depth 3 — Constituent scan: individual stocks above/below rising 20dema
-python3 ~/Documents/Investing/scripts/fetch_stage_data.py --sector-scan 3 NTR MOS CF SQM ICL
+python3 scripts/fetch_stage_data.py --sector-scan 3 NTR MOS CF SQM ICL
+
+# Depth 3 via ETF — auto-resolve ETF holdings, then scan constituents
+python3 scripts/fetch_stage_data.py --etf MOO
+python3 scripts/fetch_stage_data.py --etf GDX
 
 # Combined — sector scan + regular stage analysis
-python3 ~/Documents/Investing/scripts/fetch_stage_data.py NTR --spx --sector-scan 1
+python3 scripts/fetch_stage_data.py NTR --spx --sector-scan 1
 ```
 
 **Depth guide:**
@@ -95,12 +99,13 @@ python3 ~/Documents/Investing/scripts/fetch_stage_data.py NTR --spx --sector-sca
 | 1 | 11 S&P sector SPDRs (XLB-XLY) | None — hardcoded | ~1s |
 | 2 | Specific sector ETFs | ETF tickers | ~1s per 3 ETFs |
 | 3 | Individual stocks in a sector | Stock tickers (up to ~20) | ~1s per 10 tickers |
+| 3 (via `--etf`) | Top holdings of an ETF | ETF symbol | ~2s (resolve + scan) |
 
 Output: JSON under `"sector_scan"` key with per-ticker 20dema status, slope direction, and aggregate breadth label (strong/moderate/weak/oversold).
 
 ### Caching
 
-Weekly OHLCV data is cached locally at `~/Documents/Investing/scripts/.cache/stage_data/`.
+Weekly OHLCV data is cached locally at `scripts/.cache/stage_data/`.
 
 - **Completed weeks:** cached permanently (weekly candle is final)
 - **Current week:** cached with 4-hour TTL (candle still forming)
