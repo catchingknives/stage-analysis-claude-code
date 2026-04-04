@@ -160,21 +160,20 @@ The 20-day EMA (20dema) is the "power trend" moving average. Its uses go beyond 
 - **Exit signal:** Breakdowns on heavy volume below the 20dema usually signal the end of an uptrend. Bearish reversal candles coinciding with 20dema breakdowns should not be ignored.
 - **Post-breakout support:** Stage 2 breakouts should find support at the 20dema. A stock that breaks below the 20dema and stays below it during a market uptrend is simply not a leader.
 
-### Sector Breadth Scanner
+### Sector Breadth Scanner (opt-in via `--sector-scan`)
 - **Count stocks above rising 20dema** in a sector to gauge sector strength. When this count starts from a low level and dramatically increases over multiple weeks, a sector breakout is occurring.
 - **Declining count** after a big run signals the end of the sector move — stocks breaking down below the 20dema after trending above it = distribution.
-- **Cross-sector comparison:** Multiple sectors with high counts simultaneously = broad market health. Few sectors = narrow, fragile rally.
-- **Implementation:** Use `--sector-scan 1` for market-level breadth (11 S&P sectors), `--sector-scan 3 [tickers]` for sector-level constituent counts.
+- **This is an on-demand tool** — do NOT auto-run or auto-display sector breadth tables during regular portfolio/ticker analysis. Use it only when explicitly requested via `--sector-scan`.
 
 ### Three-Tier Sector Scan
 
 | Depth | Scan Level | What it measures | When to use |
 |-------|-----------|-----------------|-------------|
-| 1 | 11 S&P 500 sector SPDRs | Market breadth — how many sectors in power trend | Always — quick health check |
-| 2 | Specific sector ETFs | Sector-level trend — is the sector ETF itself in gear | Checking a theme (e.g., GDX, SOIL, XLE) |
-| 3 | Individual constituents | Constituent breadth — how many names are participating | Deep dive into MC's focus lists |
+| 1 | 11 S&P 500 sector SPDRs | Market breadth — how many sectors in power trend | When explicitly asked for market breadth |
+| 2 | Specific sector ETFs | Sector-level trend — is the sector ETF itself in gear | When checking a specific theme (e.g., GDX, SOIL, XLE) |
+| 3 | Individual constituents | Constituent breadth — how many names are participating | When deep-diving into a focus list |
 
-**Breadth thresholds:**
+**Breadth thresholds (when displayed):**
 - **Strong (≥70%):** Broad-based power trend — high probability environment for new longs
 - **Moderate (40-69%):** Mixed participation — be selective
 - **Weak (20-39%):** Narrow market — few sectors driving, caution on new longs
